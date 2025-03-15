@@ -1,0 +1,77 @@
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.DEBUG
+)
+logger = logging.getLogger(__name__)
+
+# Add diagnostic logging
+try:
+    from telegram import Update
+    from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+    import telegram
+    logger.debug(f"Using telegram module from: {telegram.__file__}")
+    logger.debug(f"Python path: {sys.path}")
+except ImportError as e:
+    logger.error(f"Import error: {str(e)}")
+    logger.error(f"Current Python path: {sys.path}")
+    raise
+
+from config import MESSAGES, TELEGRAM_TOKEN
+from utils import generate_qr_code, cleanup_file
+
+def start_command(update: Update, context: CallbackContext):
+    """Handle the /start command"""
+    welcome_message = f"{MESSAGES['start']['en']}\n\n{MESSAGES['start']['km']}"
+    update.message.reply_text(welcome_message)
+
+def generate_qr_handler(update: Update, context: CallbackContext):
+    """Handle text messages and generate QR codes"""
+    text = update.message.text
+    chat_id = update.message.chat_id
+
+    if not text:
+        error_message = f"{MESSAGES['empty']['en']}\n\n{MESSAGES['empty']['km']}"
+        update.message.reply_text(error_message)
+        return
+
+    try:
+        # Generate QR code
+        img_path = generate_qr_code(text, chat_id)
+
+        # Send QR code image
+        with open(img_path, 'rb') as photo:
+            update.message.reply_photo(photo=photo)
+
+        # Clean up temporary file
+        cleanup_file(img_path)
+
+    except Exception as e:
+        logger.error(f"Error in generate_qr_handler: {str(e)}")
+        error_message = f"{MESSAGES['error']['en']}\n\n{MESSAGES['error']['km']}"
+        update.message.reply_text(error_message)
+
+def error_handler(update: Update, context: CallbackContext):
+    """Handle errors"""
+    logger.error(f"Update {update} caused error {context.error}")
+    if update and update.message:
+        error_message = f"{MESSAGES['error']['en']}\n\n{MESSAGES['error']['km']}"
+        update.message.reply_text(error_message)
+
+def create_application():
+    """Create and configure the bot application"""
+    # Create the Updater and pass it your bot's token
+    updater = Updater(TELEGRAM_TOKEN)
+
+    # Get the dispatcher to register handlers
+    dp = updater.dispatcher
+
+    # Add handlers
+    dp.add_handler(CommandHandler('start', start_command))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, generate_qr_handler))
+    dp.add_error_handler(error_handler)
+
+    return updater
